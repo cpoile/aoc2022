@@ -21,28 +21,34 @@ main :: proc() {
 
 		switch choices[1] {
 		case "X":
-			score += 1
+			score += 0 // lost
 			switch choices[0] {
-			case "A":
+			case "A": // they chose rock, I chose scissor
 				score += 3
-			case "C":
-                score += 6
+			case "B": // them: paper, me: rock
+                score += 1
+			case "C": // them: scissor, me: paper
+                score += 2
 			}
 		case "Y":
-			score += 2
+			score += 3 // tie
 			switch choices[0] {
-			case "A":
-				score += 6
-			case "B":
+			case "A": // they chose rock, I chose rock
+				score += 1
+			case "B": // them: paper, me: paper
+                score += 2
+			case "C": // them: scissor, me: scissor
                 score += 3
 			}
 		case "Z":
-			score += 3
+			score += 6 // won
 			switch choices[0] {
-			case "B":
-				score += 6
-			case "C":
+			case "A": // they chose rock, I chose paper
+				score += 2
+			case "B": // them: paper, me: scissor
                 score += 3
+			case "C": // them: scissor, me: rock
+                score += 1
 			}
 		}
 	}
