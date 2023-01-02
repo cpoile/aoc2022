@@ -39,26 +39,29 @@ main :: proc() {
 	}
 
 	regx := 1
-	cycle := 0
     signal_strength := 0
-    calc_signal_at := [?]int{20, 60, 100, 140, 180, 220}
+    newline_at := [?]int{40, 80, 120, 160, 200, 240}
 	cycle_rem := 0
 	cur_op := Op{}
 
-	for cycle := 1; len(ops) > 0 || cur_op.code != .empty; cycle += 1 {
+	for cycle := 0; len(ops) > 0 || cur_op.code != .empty; cycle += 1 {
 		if cur_op.code == .empty {
 			cur_op = pop_front(&ops)
 			cycle_rem = 1 if cur_op.code == .noop else 2
 		}
 
-        // do the cycle
-        cycle_rem -= 1
+        // print pixel
+        pos_on_line := (cycle % 40)
+        pixel := abs(regx - pos_on_line) <= 1 ? "#" : "."
+        fmt.print(pixel)
 
-        // calculate signal strength?
-        if slice.any_of(calc_signal_at[:], cycle) {
-            signal_strength += cycle * regx
+        // new line?
+        if slice.any_of(newline_at[:], cycle + 1) {
+            fmt.print("\n")
         }
 
+        // do the cycle
+        cycle_rem -= 1
         // are we done?
 		if cycle_rem == 0 {
 			// finished op
@@ -66,6 +69,4 @@ main :: proc() {
             cur_op = Op{}
 		}
 	}
-
-    fmt.println("reg x:", regx, "signal strength:", signal_strength)
 }
