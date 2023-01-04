@@ -5,64 +5,69 @@ import "core:fmt"
 import "core:strings"
 import "core:slice"
 import "core:strconv"
-import "core:math/big"
+import "core:math"
+import "core:mem"
 
 Monkey :: struct {
-	items:           [dynamic]big.Int,
+	items:           [dynamic]int,
 	op_desc:         []string,
-	divisor:         big.Int,
+	divisor:         int,
 	true_target:     int,
 	false_target:    int,
 	num_inspections: int,
 }
 
 NUM_ROUNDS :: 10000
-REP_AFTER_ROUND := [?]int{1, 20, 1000, 2000, 3000, 4000, 10000}
+PRINT_ROUND := [?]int{1, 20, 1000, 2000, 3000, 4000, 5000, 6000, 10000}
 
 main :: proc() {
-	data, ok := os.read_entire_file_from_filename("sample.txt")
-	//data, ok := os.read_entire_file_from_filename("input.txt")
+	track: mem.Tracking_Allocator
+	mem.tracking_allocator_init(&track, context.allocator)
+	context.allocator = mem.tracking_allocator(&track)
+
+	_main()
+
+	for _, leak in track.allocation_map {
+		fmt.printf("%v leaked %v bytes\n", leak.location, leak.size)
+	}
+	for bad_free in track.bad_free_array {
+		fmt.printf("%v allocation %p was freed badly\n", bad_free.location, bad_free.memory)
+	}
+}
+
+_main :: proc() {
+	//data, ok := os.read_entire_file_from_filename("sample.txt")
+	data, ok := os.read_entire_file_from_filename("input.txt")
 	if !ok {panic("cannot read file")}
 	defer delete(data)
 
 	blocks := strings.split(string(data), "\n\n")
 	defer delete(blocks)
 
-	monkeys: [dynamic]Monkey
+	monkeys := make([dynamic]Monkey)
+    defer {
+        for m in monkeys {
+            delete(m.items)
+            delete(m.op_desc)
+        }
+        delete(monkeys)
+    }
 
 	for block in blocks {
 		lines := strings.split_lines(block)
 		defer delete(lines)
 
-		// note: this leaks, I think
-		items := slice.mapper(
-			strings.split_multi(strings.trim_space(lines[1]), {" ", ": ", ", "})[2:],
-			proc(s: string) -> big.Int {
-				i := big.Int{}
-				big.atoi(&i, s)
-                as, _ := big.itoa(&i)
-                defer delete(as)
-                fmt.printf("turned %v into %v\n", s, as)
-				return i
-			},
-		)
-		defer delete(items) // bc slice.to_dynamic below
-
-        fmt.print("items: ", len(items), items)
-        for item in &items {
-            as, _ := big.itoa(&item)
-            defer delete(as)
-            fmt.printf("%v ", as)
-        }
-        fmt.println()
+        res := strings.split_multi(strings.trim_space(lines[1]), {" ", ": ", ", "})
+		items := slice.mapper(res[2:], strconv.atoi)
+        delete(res)
+		defer delete(items) // bc we're copying below
 
 		_, _, desc := strings.partition(lines[2], "new = ")
 		op_desc := strings.fields(desc)
 
 		test_fields := strings.fields(lines[3])
 		defer delete(test_fields)
-        divisor := big.Int{}
-        big.atoi(&divisor, slice.last(test_fields))
+		divisor := strconv.atoi(slice.last(test_fields))
 
 		true_fields := strings.fields(lines[4])
 		defer delete(true_fields)
@@ -78,31 +83,21 @@ main :: proc() {
 		)
 	}
 
-	for m in monkeys {
-		fmt.print("monkey items")
-        for _, i in m.items {
-            as, _ := big.itoa(&m.items[i])
-            defer delete(as)
-            fmt.printf("%v ", as)
-        }
-        fmt.println()
+
+	monkey_lcm := monkeys[0].divisor
+	for i := 1; i < len(monkeys); i += 1 {
+		monkey_lcm = math.lcm(monkey_lcm, monkeys[i].divisor)
 	}
+	fmt.println("lcm:", monkey_lcm)
 
 	for r := 0; r < NUM_ROUNDS; r += 1 {
 		for m in &monkeys {
 			for len(m.items) > 0 {
 				item := pop_front(&m.items)
-				do_op(m.op_desc, &item)
-                rem := &big.Int{}
-                defer big.destroy(rem)
-                
-                big.int_mod(rem, &item, &m.divisor)
-                zero, err := big.is_zero(rem)
-                if err != nil {
-                    fmt.println("error allocating while checking is_zero:", err)
-                    panic("bad")
-                }
-				if zero {
+				item = do_op(m.op_desc, item)
+
+				item %%= monkey_lcm
+				if item %% m.divisor == 0 {
 					append(&monkeys[m.true_target].items, item)
 				} else {
 					append(&monkeys[m.false_target].items, item)
@@ -116,45 +111,30 @@ main :: proc() {
 		// 	fmt.println("monkey", i, m.items)
 		// }
 
-		if slice.any_of(REP_AFTER_ROUND[:], r + 1) {
-			fmt.println("round", r + 1)
-			for m, i in monkeys {
-				fmt.println("monkey", i, "inpected items", m.num_inspections, "times")
-			}
-		}
-
+		// if slice.any_of(PRINT_ROUND[:], r + 1) {
+        //     fmt.println("round", r+1)
+		// 	for m, i in monkeys {
+		// 		fmt.println("monkey", i, "inpected items", m.num_inspections, "times")
+		// 	}
+		// }
 	}
 
-	// for m, i in monkeys {
-	// 	fmt.println("monkey", i, "inpected items", m.num_inspections, "times")
-	// }
 
 	inspections := slice.mapper(monkeys[:], proc(m: Monkey) -> int {return m.num_inspections})
+    defer delete(inspections)
 	slice.reverse_sort(inspections)
 	fmt.println("monkey business:", inspections[0] * inspections[1])
 }
 
-do_op :: proc(desc: []string, old: ^big.Int) {
-	a, b := &big.Int{}, &big.Int{}
-	defer big.destroy(a, b)
-
-	if desc[0] == "old" {
-		big.copy(a, old)
-	} else {
-		big.atoi(a, desc[0])
-	}
-
-	if desc[2] == "old" {
-		big.copy(b, old)
-	} else {
-		big.atoi(b, desc[2])
-	}
+do_op :: proc(desc: []string, old: int) -> int {
+	a := old if desc[0] == "old" else strconv.atoi(desc[0])
+	b := old if desc[2] == "old" else strconv.atoi(desc[2])
 
 	switch (desc[1]) {
 	case "*":
-		big.int_mul(old, a, b)
+		return a * b
 	case "+":
-		big.int_add(old, a, b)
+		return a + b
 	case:
 		fmt.printf("got op:", desc[1])
 		panic("bad op")

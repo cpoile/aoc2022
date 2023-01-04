@@ -9,8 +9,7 @@
             "command": "odin",
             "args": [
                 "build",
-                "${file}",
-                "-file",
+                "${fileDirname}",
                 "-out:${fileDirname}/../${fileBasenameNoExtension}",
                 "-o:minimal",
                 "-debug"
@@ -22,6 +21,6 @@
             },
             // Use the standard MS compiler pattern to detect errors, warnings and infos
             "problemMatcher": "$msCompile"
-        }
+        },
     ]
 }
